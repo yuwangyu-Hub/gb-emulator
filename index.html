@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>GAME BOY 网页模拟器</title>
+<meta name="description" content="纯前端 Game Boy 网页模拟器：3D 机身可旋转、卡带收藏抽屉、手机端虚拟按键。上传 .gb ROM 即可开玩。">
+<meta property="og:title" content="GAME BOY 网页模拟器">
+<meta property="og:description" content="纯前端 Game Boy 网页模拟器 · 3D 机身 · 卡带插拔 · 上传 ROM 即玩">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%23d8d5cb'/%3E%3Crect x='7' y='6' width='18' height='14' rx='2' fill='%232b2b2b'/%3E%3Crect x='9' y='8' width='14' height='10' fill='%238bac0f'/%3E%3Ccircle cx='23' cy='24' r='2.4' fill='%23c2357a'/%3E%3Ccircle cx='18' cy='26' r='2.4' fill='%23c2357a'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css?v=1791003476">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">▣</span>
+      <div>
+        <h1>GAME BOY <em>网页模拟器</em></h1>
+        <p>上传卡带 ROM · 3D 机身可旋转 · 卡带插入效果</p>
+      </div>
+    </div>
+    <div class="chips">
+      <span id="statusChip" class="chip">待机中</span>
+      <span id="fpsChip" class="chip dim">-- FPS</span>
+    </div>
+  </header>
+
+  <aside id="infoCard" class="info-card">
+    <div class="info-head">
+      <div class="cart-icon">🕹️</div>
+      <div>
+        <div id="cartTitle" class="cart-title">—</div>
+        <div id="cartFile" class="cart-file">未插入卡带</div>
+      </div>
+      <span class="ic-caret" aria-hidden="true"></span>
+    </div>
+    <div id="cartRows" class="cart-rows"></div>
+  </aside>
+
+  <section class="controls">
+    <input type="file" id="fileInput" accept=".gb,.gbc,.bin,.rom" hidden>
+    <button id="btnUpload" class="btn primary" title="上传 ROM">📤<span class="bt"> 上传 ROM</span></button>
+    <button id="btnDemo" class="btn" title="试玩示例">⭐<span class="bt"> 试玩示例</span></button>
+    <button id="btnEject" class="btn" title="弹出卡带">⏏<span class="bt"> 弹出卡带</span></button>
+    <button id="btnPause" class="btn" title="暂停">⏸<span class="bt"> 暂停</span></button>
+    <button id="btnReset" class="btn" title="重启">↻<span class="bt"> 重启</span></button>
+    <button id="btnFull" class="btn" title="全屏">⛶<span class="bt"> 全屏</span></button>
+    <button id="btnMute" class="btn icon" title="声音开关" aria-label="声音开关">
+      <svg class="ic-vol" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M11 5 6.2 9H3v6h3.2L11 19z" fill="currentColor" stroke="none"/>
+        <path class="vw vw1" d="M14.8 9.2a4.2 4.2 0 0 1 0 5.6"/>
+        <path class="vw vw2" d="M17.6 6.4a8.4 8.4 0 0 1 0 11.2"/>
+        <line class="vx" x1="15.5" y1="9.5" x2="20.5" y2="14.5"/>
+        <line class="vx" x1="20.5" y1="9.5" x2="15.5" y2="14.5"/>
+      </svg>
+    </button>
+    <span class="sep"></span>
+    <label class="field sel">
+      <span>外壳</span>
+      <select id="shellSel">
+        <option value="dmg">经典米灰</option>
+        <option value="black">深邃黑</option>
+        <option value="purple">原子紫</option>
+        <option value="red">樱桃红</option>
+        <option value="blue">冰湖蓝</option>
+      </select>
+    </label>
+    <label class="field sel">
+      <span>屏幕配色</span>
+      <select id="paletteSel">
+        <option value="dmg">经典绿</option>
+        <option value="green">草绿</option>
+        <option value="gray">灰白</option>
+        <option value="berry">莓果</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>音量</span>
+      <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="0.8">
+    </label>
+  </section>
+
+  <p class="hint">键盘：方向键 十字键 · X / Z = A / B · 回车 = START · Shift = SELECT · 空格 = 暂停 · 也可以直接点击 3D 模型上的按键 · 拖拽 ROM 文件到页面即可插卡</p>
+
+  <div id="fsGameView" hidden><button id="fsExit" class="fs-exit" aria-label="退出全屏" title="退出全屏">✕</button><span class="fs-tip">Esc 退出全屏</span></div>
+
+  <p class="credit" style="text-align:center;font-size:11px;color:rgba(255,255,255,.35);margin:6px 0 0">
+    3D 模型: <a href="https://sketchfab.com/3d-models/game-boy-high-poly-sds-ready-4e41c3f5079e4104a0a7f497ab05a087" target="_blank" rel="noopener" style="color:inherit">Game Boy High Poly SDS ready</a>
+    by danielweinlein ·
+    <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener" style="color:inherit">CC-BY 4.0</a>
+    ·
+    卡带封面图: <a href="https://thumbnails.libretro.com/" target="_blank" rel="noopener" style="color:inherit">Libretro Thumbnails</a>
+  </p>
+
+  <div class="touch" aria-hidden="true">
+    <div class="ss">
+      <button id="tSelect" class="tbtn pill">SELECT</button>
+      <button id="tStart" class="tbtn pill">START</button>
+    </div>
+    <div class="touch-row">
+      <div class="dpad">
+        <button id="tUp" class="tbtn">▲</button>
+        <button id="tLeft" class="tbtn">◀</button>
+        <button id="tRight" class="tbtn">▶</button>
+        <button id="tDown" class="tbtn">▼</button>
+      </div>
+      <div class="ab">
+        <button id="tB" class="tbtn round">B</button>
+        <button id="tA" class="tbtn round">A</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="dropOverlay" class="drop-overlay">
+    <div class="drop-box">
+      <div class="cart-big">🕹️</div>
+      <p>松开手指，插入卡带</p>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <div id="errBox" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:999;max-width:78%;padding:18px 22px;border-radius:14px;background:#fff;border:1px solid #e2e5ea;box-shadow:0 10px 40px rgba(0,0,0,.16);font-size:13px;color:#1c1f26">
+    <b style="font-size:14px">页面加载出错了</b>
+    <pre id="errMsg" style="white-space:pre-wrap;margin:10px 0 0;font-size:12px;color:#a02b2b;font-family:ui-monospace,Menlo,monospace"></pre>
+  </div>
+  <script>
+  (function () {
+    function show(m) {
+      var b = document.getElementById('errBox');
+      if (!b) return;
+      document.getElementById('errMsg').textContent = String(m);
+      b.style.display = 'block';
+    }
+    window.__showErr = show;
+    window.addEventListener('error', function (e) {
+      show((e.message || '未知错误') + (e.filename ? '\n' + e.filename + ':' + e.lineno : ''));
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e.reason;
+      show('Promise: ' + (r && r.stack ? r.stack : r));
+    });
+  })();
+  </script>
+
+  <script type="module" src="src/main.js?v=1791003476"></script>
+</body>
+</html>

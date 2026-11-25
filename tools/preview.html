@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>模型对比预览</title>
+<style>
+  html,body { margin:0; height:100%; background:#e8ebf0; font:13px system-ui; overflow:hidden; }
+  #cv { display:block; width:100vw; height:100vh; }
+  #info { position:fixed; left:10px; top:10px; background:rgba(255,255,255,.92); padding:10px 12px;
+          border-radius:8px; max-height:80vh; overflow:auto; white-space:pre; font:11px ui-monospace,Menlo,monospace; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "../vendor/three.module.js",
+               "three/addons/controls/OrbitControls.js": "../vendor/OrbitControls.js" } }
+</script>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="info">loading…</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from '../vendor/GLTFLoader.js';
+
+const q = new URLSearchParams(location.search);
+const which = (q.get('m') || 'A').toUpperCase();
+const view = q.get('view') || 'front';
+const hideRe = q.get('hide') || '';          // 隐藏匹配 mesh（逗号分隔正则）
+const hlRe = q.get('hl') || '';              // 高亮匹配 mesh
+const url = which === 'A' ? '../models/gb-dmg-v1-backup.glb' : '../models/gb-dmg-v2.glb';
+
+const canvas = document.getElementById('cv');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight, false);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xe8ebf0);
+const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 5000);
+
+// 灯光：三点布光
+const key = new THREE.DirectionalLight(0xffffff, 2.6); key.position.set(60, 90, 120); scene.add(key);
+const fill = new THREE.DirectionalLight(0xdfe8ff, 1.0); fill.position.set(-90, 20, 60); scene.add(fill);
+const rim = new THREE.DirectionalLight(0xffffff, 1.1); rim.position.set(0, -60, -110); scene.add(rim);
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+
+const root = new THREE.Group();
+scene.add(root);
+
+const info = document.getElementById('info');
+const lines = [];
+
+new GLTFLoader().load(url, (gltf) => {
+  const obj = gltf.scene;
+  obj.matrixAutoUpdate = true;
+  root.add(obj);
+
+  // ---- 重置 Sketchfab 摆拍姿势：清零所有无网格容器节点的旋转（保留平移/缩放）----
+  obj.traverse((o) => {
+    if (!o.isMesh && !o.isScene) {
+      o.rotation.set(0, 0, 0);
+      o.quaternion.identity();
+      o.updateMatrix();
+    }
+  });
+
+  // ---- 统计所有 mesh 的世界包围盒 ----
+  const meshes = [];
+  const hideList = hideRe ? hideRe.split(',').map(s => new RegExp(s, 'i')) : [];
+  const hlList = hlRe ? hlRe.split(',').map(s => new RegExp(s, 'i')) : [];
+  obj.traverse((o) => {
+    if (o.isMesh) {
+      o.matrixAutoUpdate = true;
+      const nm = o.name || '';
+      if (hideList.some(r => r.test(nm))) o.visible = false;
+      if (hlList.some(r => r.test(nm))) {
+        o.material = new THREE.MeshStandardMaterial({
+          color: 0xff3b30, roughness: 0.4, metalness: 0, side: THREE.DoubleSide,
+        });
+      }
+      // 法线可能朝内，先开双面避免全黑；金属度默认 1 会渲染成黑色，强制降为 0
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(m => {
+        m.side = THREE.DoubleSide;
+        if (m.metalness !== undefined && (m.metalness === null || m.metalness > 0.5)) m.metalness = 0;
+        if (m.roughness !== undefined && m.roughness < 0.35) m.roughness = 0.55;
+      });
+      meshes.push(o);
+    }
+  });
+
+  // 整体包围盒（原始）
+  let bb0 = new THREE.Box3();
+  meshes.forEach((m) => bb0.expandByObject(m));
+  const size0 = new THREE.Vector3(); bb0.getSize(size0);
+  lines.push(`MODEL ${which}  view=${view}`);
+  lines.push(`原始 bbox size: ${size0.x.toFixed(2)} x ${size0.y.toFixed(2)} x ${size0.z.toFixed(2)}`);
+  lines.push(`原始 bbox min: ${bb0.min.toArray().map(v=>v.toFixed(1))}`);
+  lines.push(`原始 bbox max: ${bb0.max.toArray().map(v=>v.toFixed(1))}`);
+  lines.push(`mesh 数: ${meshes.length}`);
+  let tri = 0; meshes.forEach(m => { const g = m.geometry; tri += (g.index ? g.index.count : g.attributes.position.count) / 3; });
+  lines.push(`三角面: ${tri}`);
+
+  // ---- 归一化：按最长边缩放到 148（真机高度 mm），底部对齐 y=0 ----
+  const maxDim = Math.max(size0.x, size0.y, size0.z);
+  // 判断哪个轴是"高度"（机身长边）。用整体 bbox 的最大轴
+  let hAxis = 'y';
+  if (size0.z >= size0.y && size0.z >= size0.x) hAxis = 'z';
+  else if (size0.x >= size0.y && size0.x >= size0.z) hAxis = 'x';
+  lines.push(`判定长轴(=机身高度方向): ${hAxis}`);
+
+  // 如果长轴不是 Y，先旋转让长轴朝 Y
+  const q1 = new THREE.Quaternion();
+  if (hAxis === 'z') q1.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+  else if (hAxis === 'x') q1.setFromEuler(new THREE.Euler(0, 0, Math.PI / 2));
+  obj.quaternion.premultiply(q1);
+  obj.updateMatrixWorld(true);
+
+  // ---- 找屏幕玻璃，把"有屏幕的那一侧"转到 +z（正面朝相机）----
+  const screenMesh = meshes.find(m => /glas|screen/i.test(m.name || '')) || null;
+  lines.push(`screenMesh = ${screenMesh ? screenMesh.name : '无'}`);
+  if (screenMesh) {
+    lines.push(`  local pos=${screenMesh.position.toArray().map(v=>v.toFixed(2))} quat=${[screenMesh.quaternion.x,screenMesh.quaternion.y,screenMesh.quaternion.z,screenMesh.quaternion.w].map(v=>v.toFixed(2))} scale=${screenMesh.scale.toArray().map(v=>v.toFixed(2))}`);
+    const mw = screenMesh.matrixWorld.elements;
+    lines.push(`  matrixWorld: [${Array.from(mw).slice(0,12).map(v=>v.toFixed(2)).join(',')}]`);
+  }
+  let bbS = null;
+  if (screenMesh) {
+    bbS = new THREE.Box3().setFromObject(screenMesh);
+    const cs = new THREE.Vector3(); bbS.getCenter(cs);
+    lines.push(`屏幕网格: ${screenMesh.name} center=${cs.toArray().map(v=>v.toFixed(1))}`);
+    // 与整体中心比较，屏幕偏向哪一侧
+    let bbT = new THREE.Box3();
+    meshes.forEach(m => bbT.expandByObject(m));
+    const ct = new THREE.Vector3(); bbT.getCenter(ct);
+    // 在旋转后的局部坐标里，屏幕的"厚度轴"是 z
+    const dz = cs.z - ct.z;
+    lines.push(`屏幕偏移 dz=${dz.toFixed(1)} ${dz < 0 ? '(屏幕在 -z 侧，需再转 180°)' : '(屏幕在 +z 侧)'}`);
+    if (dz < 0) {
+      const q2 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));
+      obj.quaternion.premultiply(q2);
+      obj.updateMatrixWorld(true);
+    }
+  }
+
+  // ---- 按键应在屏幕下方：若按键中心 y 高于屏幕中心 y，绕 Z 转 180° ----
+  const btnMesh = meshes.find(m => /^(a|b|control_cross|arrows)/i.test(m.name || ''));
+  if (screenMesh && btnMesh) {
+    const bbB = new THREE.Box3().setFromObject(btnMesh);
+    const cb = new THREE.Vector3(); bbB.getCenter(cb);
+    const cs2 = new THREE.Vector3(); new THREE.Box3().setFromObject(screenMesh).getCenter(cs2);
+    lines.push(`按键 c=${cb.toArray().map(v=>v.toFixed(0))} 屏幕 c=${cs2.toArray().map(v=>v.toFixed(0))}`);
+    if (cb.y > cs2.y) {
+      lines.push('按键在屏幕上方 → 绕 Z 转 180° 修正');
+      const q3 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI));
+      obj.quaternion.premultiply(q3);
+      obj.updateMatrixWorld(true);
+    }
+  }
+
+  let bb1 = new THREE.Box3();
+  meshes.forEach((m) => bb1.expandByObject(m));
+  const size1 = new THREE.Vector3(); bb1.getSize(size1);
+  const longest = Math.max(size1.x, size1.y, size1.z);
+  const s = 148 / longest;
+  obj.scale.setScalar(s);
+  obj.updateMatrixWorld(true);
+
+  let bb2 = new THREE.Box3();
+  meshes.forEach((m) => bb2.expandByObject(m));
+  const c2 = new THREE.Vector3(); bb2.getCenter(c2);
+  obj.position.set(-c2.x, -bb2.min.y, -c2.z);
+  obj.updateMatrixWorld(true);
+
+  let bbF = new THREE.Box3();
+  meshes.forEach((m) => bbF.expandByObject(m));
+  const sizeF = new THREE.Vector3(); bbF.getSize(sizeF);
+  lines.push(`归一化后 size: ${sizeF.x.toFixed(1)} x ${sizeF.y.toFixed(1)} x ${sizeF.z.toFixed(1)}  (真机 90 x 148 x 32)`);
+
+  // ---- 找出"正面"：屏幕玻璃所在的一侧 ----
+  // 用厚度最小轴（z）的两侧面积判断，或者直接列出各 mesh 的中心
+  lines.push('');
+  lines.push('--- mesh 世界包围盒（归一化后, mm） ---');
+  const rows = [];
+  meshes.forEach((m, i) => {
+    const b = new THREE.Box3().setFromObject(m);
+    const sz = new THREE.Vector3(); b.getSize(sz);
+    const ct = new THREE.Vector3(); b.getCenter(ct);
+    rows.push({ i, name: (m.name || `mesh${i}`).slice(0, 26), sz, ct });
+  });
+  rows.sort((a, b) => b.sz.x * b.sz.y * b.sz.z - a.sz.x * a.sz.y * a.sz.z);
+  rows.slice(0, 20).forEach(r => {
+    lines.push(`  ${r.name.padEnd(26)} c=(${r.ct.x.toFixed(0)},${r.ct.y.toFixed(0)},${r.ct.z.toFixed(0)}) s=(${r.sz.x.toFixed(0)},${r.sz.y.toFixed(0)},${r.sz.z.toFixed(0)})`);
+  });
+
+  info.textContent = lines.join('\n');
+  window.__previewReady = true;
+
+  // 相机
+  const cz = view === 'back' ? -1 : 1;
+  camera.position.set(0, sizeF.y * 0.45, 320 * cz);
+  camera.lookAt(0, sizeF.y * 0.45, 0);
+  camera.updateProjectionMatrix();
+  (function loop() { requestAnimationFrame(loop); render(); })();
+});
+
+function render() { renderer.render(scene, camera); }
+addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); render();
+});
+</script>
+</body>
+</html>

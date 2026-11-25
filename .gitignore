@@ -1,0 +1,11 @@
+# 本地构建/测试产物
+tools/out/
+*.log
+
+# 系统文件
+.DS_Store
+._*
+
+# 版权 ROM 不入库（仓库公开，避免 DMCA 风险）
+# 需要"试玩示例"时，把 kirby.gb 放到 roms/ 下仅本地使用
+roms/
