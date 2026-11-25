@@ -1,15 +1,23 @@
 // 三维场景：渲染器 / 灯光 / 相机 / 交互
 
 import * as THREE from 'three';
-import { OrbitControls } from '../../vendor/OrbitControls.js?v=1791003476';
-import { RoomEnvironment } from '../../vendor/RoomEnvironment.js?v=1791003476';
-import { createGameBoy } from './gameboyModel.js?v=1791003476';
-import { createCartridge } from './cartridgeModel.js?v=1791003476';
-import { createBoxes } from './boxesModel.js?v=1791003476';
-import { createDrawer } from './drawerModel.js?v=1791003476';
-import { Animator } from './animator.js?v=1791003476';
+import { OrbitControls } from '../../vendor/OrbitControls.js?v=1795613875';
+import { RoomEnvironment } from '../../vendor/RoomEnvironment.js?v=1795613875';
+import { createGameBoy } from './gameboyModel.js?v=1795613875';
+import { createCartridge } from './cartridgeModel.js?v=1795613875';
+import { createBoxes } from './boxesModel.js?v=1795613875';
+import { createDrawer } from './drawerModel.js?v=1795613875';
+import { Animator } from './animator.js?v=1795613875';
 
-export async function createScene(canvasEl, lcdTexture) {
+export async function createScene(canvasEl, lcdTexture, opts = {}) {
+  // 模型加载进度：机身占大头（0~85%），包装盒（85~100%）
+  const report = opts.onProgress || null;
+  const stage = (from, to) => (loaded, total) => {
+    if (!report) return;
+    const ratio = total > 0 ? Math.min(1, loaded / total) : 0;
+    report(from + (to - from) * ratio);
+  };
+
   const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -77,7 +85,7 @@ export async function createScene(canvasEl, lcdTexture) {
   scene.add(shadowFloor);
 
   // ---------- 模型 ----------
-  const gb = await createGameBoy({ lcdTexture });
+  const gb = await createGameBoy({ lcdTexture, onProgress: stage(0, 0.85) });
   scene.add(gb.group);
 
   const cart = createCartridge({
@@ -88,7 +96,7 @@ export async function createScene(canvasEl, lcdTexture) {
   scene.add(cart.group);
 
   // 两个 Game Boy 包装盒（从旧模型提取），摆在机身两侧落地
-  const boxes = await createBoxes();
+  const boxes = await createBoxes({ onProgress: stage(0.85, 1) });
   scene.add(boxes.group);
 
   // 卡带抽屉柜（机身左前方，可拉出展示卡带收藏）

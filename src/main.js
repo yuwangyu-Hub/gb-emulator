@@ -1,15 +1,15 @@
 // 主程序：场景 + 模拟器 + 交互串联
 
 import * as THREE from 'three';
-import { GameBoy, parseROMHeader } from './emulator/gameboy.js?v=1791003476';
+import { GameBoy, parseROMHeader } from './emulator/gameboy.js?v=1795613875';
 import {
   LCDScreen, makeLabelTexture, makeLabelTextureFromImage,
-} from './scene/textures.js?v=1791003476';
-import { createScene } from './scene/scene.js?v=1791003476';
-import { updateCartridgeLabel } from './scene/cartridgeModel.js?v=1791003476';
-import { AudioDriver } from './audio.js?v=1791003476';
-import { loadCartArtIndex, findCartArt, loadCartArtImage, cartArtCount } from './cartart.js?v=1791003476';
-import { listROMs, addROM, ensureDemoROM } from './collection.js?v=1791003476';
+} from './scene/textures.js?v=1795613875';
+import { createScene } from './scene/scene.js?v=1795613875';
+import { updateCartridgeLabel } from './scene/cartridgeModel.js?v=1795613875';
+import { AudioDriver } from './audio.js?v=1795613875';
+import { loadCartArtIndex, findCartArt, loadCartArtImage, cartArtCount } from './cartart.js?v=1795613875';
+import { listROMs, addROM, ensureDemoROM } from './collection.js?v=1795613875';
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -50,8 +50,41 @@ lcdTexture.minFilter = THREE.LinearFilter;
 lcdTexture.generateMipmaps = false;
 lcdTexture.colorSpace = THREE.SRGBColorSpace;
 
+// ---------- 启动遮罩（模型下载进度） ----------
+const bootScreen = $('bootScreen');
+const bootBar = $('bootBar');
+const bootMeta = $('bootMeta');
+
+function setBootProgress(p) {
+  if (!bootScreen || bootScreen.classList.contains('is-done')) return;
+  const pct = Math.max(0, Math.min(100, Math.round(p * 100)));
+  if (bootBar) bootBar.style.width = pct + '%';
+  if (bootMeta) bootMeta.textContent = pct < 100 ? `${pct}%` : '渲染中…';
+}
+
+function finishBoot() {
+  if (!bootScreen) return;
+  setBootProgress(1);
+  // 让最后一帧 3D 先上屏，再淡出遮罩，避免闪白
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      bootScreen.classList.add('is-done');
+      setTimeout(() => { bootScreen.hidden = true; }, 600);
+    }, 120);
+  });
+}
+
 // ---------- 场景与模拟器 ----------
-const { renderer, scene, camera, controls, gb: model, cart, animator, drawer } = await createScene(canvas, lcdTexture);
+const bootBundle = await (async () => {
+  try {
+    return await createScene(canvas, lcdTexture, { onProgress: setBootProgress });
+  } catch (e) {
+    // 模型加载失败时别让遮罩盖住错误提示框
+    if (bootScreen) { bootScreen.classList.add('is-done'); bootScreen.hidden = true; }
+    throw e;
+  }
+})();
+const { renderer, scene, camera, controls, gb: model, cart, animator, drawer } = bootBundle;
 const gb = new GameBoy();
 gb.ppu.onFrame = () => { gb.frameCount++; };
 const audio = new AudioDriver(gb);
@@ -1115,6 +1148,8 @@ function loop(now) {
   }
 }
 requestAnimationFrame(loop);
+// 首帧真正画出来之后再收启动遮罩（避免露出空白画布）
+requestAnimationFrame(() => requestAnimationFrame(finishBoot));
 
 // ---------- 启动：初始化抽屉收藏 ----------
 (async () => {

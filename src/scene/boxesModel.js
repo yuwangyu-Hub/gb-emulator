@@ -4,13 +4,14 @@
 // 场景坐标约定与 gameboyModel.js 一致：机身 88.5×148×33，中心在原点，y∈[-74,74]。
 
 import * as THREE from 'three';
-import { GLTFLoader } from '../../vendor/GLTFLoader.js?v=1791003476';
+import { GLTFLoader } from '../../vendor/GLTFLoader.js?v=1795613875';
+import { loadGLBWithProgress } from './modelLoader.js?v=1795613875';
 
-export async function createBoxes() {
+export async function createBoxes({ onProgress } = {}) {
   const group = new THREE.Group();
   let gltf;
   try {
-    gltf = await new GLTFLoader().loadAsync('models/gb-dmg-v1-backup.glb');
+    gltf = await loadGLBWithProgress(new GLTFLoader(), 'models/gb-dmg-v1-backup.glb', onProgress);
   } catch (e) {
     console.warn('[boxes] 旧模型加载失败，跳过包装盒', e);
     return { group };

@@ -68,7 +68,8 @@ for (const file of files) {
 
 // 检查 index.html 引用的资源
 const html = read('index.html');
-const refs = [...html.matchAll(/(?:href|src)="([^"]+)"/g)].map((x) => x[1]).filter((u) => !u.startsWith('http'));
+const refs = [...html.matchAll(/(?:href|src)="([^"]+)"/g)].map((x) => x[1])
+  .filter((u) => !u.startsWith('http') && !u.startsWith('data:') && !u.startsWith('#'));
 for (const r of refs) {
   const clean = r.split('?')[0];
   if (!fs.existsSync(path.join(root, clean))) {

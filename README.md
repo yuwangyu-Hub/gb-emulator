@@ -10,6 +10,7 @@
 
 - **完整模拟器内核**（`src/emulator/`）：SM83 CPU、PPU、APU 4 声道、定时器、DMA，音频时钟驱动主循环
 - **3D 展示层**（`src/scene/`）：真机形态 Game Boy 3D 模型，插卡/退卡动画、外壳换色（5 色）、屏幕配色（4 款）、卡带抽屉收藏柜（自动多层）、包装盒摆设
+- **首屏加载进度**：模型带字节级进度条（`src/scene/modelLoader.js`），弱网下不会对着空白画布等
 - **卡带收藏**：上传 .gb/.gbc ROM 存入 IndexedDB，点击抽屉里的卡带直接插卡开玩；卡带标签自动匹配封面图库（可选）
 - **全屏模式**：LCD 游戏画面整数倍缩放全屏（不拉伸变形），手机端画面居上、虚拟按键居下
 - **移动端适配**：触屏虚拟按键（十字键 + 斜排 A/B + START/SELECT）、双指缩放场景、长按不弹系统菜单
@@ -62,7 +63,8 @@ gh repo create gb-emulator --public --source=. --remote=origin --push
 |------|------|----------|--------------|
 | 试玩卡带 ROM（`kirby.gb`） | `roms/` 目录 | **不入库**（见 `.gitignore`） | "试玩示例"按钮提示未内置 ROM，用"上传 ROM"按钮添加即可 |
 | 卡带封面图库（`index.json` + 1633 张 jpg） | `assets/carts/` 目录 | 入库 | 卡带标签使用内置程序化绘制的默认样式 |
-| 3D 模型（`gb-dmg-v2.glb`，26MB） | `models/` 目录 | 入库 | 无备用模型，机身无法显示 |
+| 3D 模型（`gb-dmg-v2.glb`，3.6MB） | `models/` 目录 | 入库 | 无备用模型，机身无法显示 |
+| 包装盒模型（`gb-dmg-v1-backup.glb`，0.6MB） | `models/` 目录 | 入库 | 右侧包装盒不显示，其余功能正常 |
 | three.js 等依赖 | `vendor/` 目录 | 入库 | 页面完全无法渲染（本地化，不依赖 CDN） |
 
 - 封面图库可用 `tools/fetch_carts.py` 从 [Libretro Thumbnails](https://thumbnails.libretro.com/) 重新抓取生成
@@ -98,3 +100,21 @@ gb-emulator/
 
 - 改完代码重新发布前，先跑 `python3 tools/bump_version.py` 刷新 `?v=` 版本号，防止浏览器缓存新旧文件混搭（这是本项目踩过最大的坑）
 - 冒烟测试：`node tools/smoke.js`（需 Node 18+，跑一帧渲染并导出 PNG）
+- 静态检查：`node tools/checkimports.js`（校验模块导入路径、导出符号、index.html 资源引用）
+- 本地预览：`python3 tools/serve.py 8124`
+
+### 模型体积（首屏最大的瓶颈）
+
+原始 Sketchfab 模型是 89.9 万三角面 / 26MB，浏览器要下完才渲染。已用 [glTF Transform](https://gltf-transform.dev/) 处理到 22.5 万面 / 3.6MB，**网格名与层级保持不变**（`gameboyModel.js` 靠 `game_mesh` / `sticker` 等名字识别部件，处理时不能 join/flatten）。重新处理时：
+
+```bash
+npx @gltf-transform/cli weld    in.glb a1.glb
+npx @gltf-transform/cli simplify a1.glb a2.glb --ratio 0.25 --error 0.002   # ratio 低于 0.2 屏幕边框会出现棱角
+npx @gltf-transform/cli quantize a2.glb a3.glb                              # KHR_mesh_quantization，three 原生支持
+npx @gltf-transform/cli dedup a3.glb a4.glb
+npx @gltf-transform/cli prune a4.glb out.glb
+# 包装盒模型只有 108 个面但贴图是 4 张 1MB PNG，转 JPEG 后 4.2MB → 0.6MB
+npx @gltf-transform/cli jpeg b4.glb out.glb --quality 82 --formats png
+```
+
+> 不要用 `optimize` 一站式命令：它默认带 draco 压缩（需要额外解码器），且会 join/flatten 场景，破坏按网格名取部件的逻辑。

@@ -7,7 +7,8 @@
 // 中心在原点（y ∈ [-74, 74]），正面朝 +z。
 
 import * as THREE from 'three';
-import { GLTFLoader } from '../../vendor/GLTFLoader.js?v=1791003476';
+import { GLTFLoader } from '../../vendor/GLTFLoader.js?v=1795613875';
+import { loadGLBWithProgress } from './modelLoader.js?v=1795613875';
 
 const TARGET_H = 148;   // 真机高度 mm
 const FLOOR_Y = -74;
@@ -81,11 +82,11 @@ function wrapButton(mesh, depth) {
   return wrap;
 }
 
-export async function createGameBoy({ lcdTexture }) {
+export async function createGameBoy({ lcdTexture, onProgress } = {}) {
   const group = new THREE.Group();
 
   const loader = new GLTFLoader();
-  const gltf = await loader.loadAsync('models/gb-dmg-v2.glb');
+  const gltf = await loadGLBWithProgress(loader, 'models/gb-dmg-v2.glb', onProgress);
   const obj = gltf.scene;
 
   // ---------- 1. 重置 Sketchfab 摆拍姿势：清零所有无网格容器节点的旋转 ----------
