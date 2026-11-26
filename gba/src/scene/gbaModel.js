@@ -1,241 +1,153 @@
-// Game Boy Advance（AGB-001）程序化 3D 机身
+// Game Boy Advance（AGB-001）3D 机身
 //
-// 没有现成的 AGB GLB 模型，这里用 three.js 几何体按真机尺寸搭：
-// 144.5 × 82 × 24.5 mm，屏幕 61.2 × 40.8 mm（240×160，3:2）。
-// 坐标单位 = 毫米，机身中心在原点，正面朝 +z。
+// 使用 Sketchfab 上的 CC-BY 模型：
+//   "GameBoy Advance" by N4B1L Nassir
+//   https://sketchfab.com/3d-models/gameboy-advance-1f0cec299147469f8f856c6fb8867c30
+//   体素风格，6726 三角面，单网格 + 256×1 调色板贴图。
 //
-// 轮廓按真机的辨识特征做，不是简单圆角矩形：
-//   · 两端（握持区）最高，41mm 半高
-//   · 中间收腰：上沿降到 39，下沿升到 33（下缘比上缘弯得多）
-//   · 左肩 / 右肩向上外扩，L / R 键就藏在那两个鼓包上
-//   · 顶部正中是卡带槽
+// 模型原始单位约 1cm（14.7 × 8.1 × 2.3），正面朝 +Z。这里把它缩放到真机
+// 144.5mm 宽，再用「按渲染图测出来的坐标」贴 LCD、按键代理、指示灯和卡带槽。
+//
+// 关键坐标（模型局部单位，居中后）都是在正交正面渲染图上按像素量出来的，
+// 换算关系：1 单位 ≈ 9.83mm（144.5 / 14.7）。
 
 import * as THREE from 'three';
-import { slab, plastic, extrude } from './geom.js';
+import { GLTFLoader } from '../../vendor/GLTFLoader.js';
+import { loadGLBWithProgress } from './modelLoader.js';
 
-// 真机尺寸
-const HW = 72.25;        // 半宽（144.5mm）
-const HE = 41;           // 端部半高（82mm）
-const TOP_MID = 38.5;    // 上沿中点（收腰）
-const BOT_MID = 36.5;    // 下沿中点（比上沿收得更多）
-const BODY_D = 24.5;     // 厚度
-const FRONT = BODY_D / 2;
-const SCREEN = { w: 61.2, h: 40.8, cy: 4 };
-const DPAD = { x: -50, y: 3 };
+const BODY_W = 14.7;              // 模型原始宽度（单位）
+const TARGET_W = 144.5;           // 真机宽度（mm）
+const FRONT_Z = 1.15;             // 正面 z（居中后，模型厚 2.3）
+
+// 测量值（模型局部单位）
+const LCD = { cx: 0.09, cy: 0.40, w: 6.49, h: 4.29 };
+const DPAD = { x: -5.21, y: 0.71, size: 1.69 };
+const BTN_A = { x: 6.20, y: 0.91, r: 0.45 };
+const BTN_B = { x: 4.89, y: 0.41, r: 0.45 };
+const BTN_SELECT = { x: -4.30, y: -1.30, size: 0.55 };
+const BTN_START = { x: -4.30, y: -2.09, size: 0.55 };
+const SHOULDER_L = { x: -5.65, y: 3.01, w: 2.6, h: 1.3 };
+const SHOULDER_R = { x: 5.64, y: 3.01, w: 2.6, h: 1.3 };
+const LED = { x: 4.84, y: 2.66, r: 0.12 };
+const SLOT_Y = 4.05;              // 顶部卡槽
 
 export const SHELL_COLORS = {
-  indigo: { name: '靛紫（原色）', body: 0x4a3f7a, dark: 0x2a2740, accent: 0x8e3a52 },
-  glacier: { name: '冰川蓝', body: 0x7fa6c8, dark: 0x33495f, accent: 0x8e3a52 },
-  black: { name: '午夜黑', body: 0x25262c, dark: 0x14151a, accent: 0x8e3a52 },
-  white: { name: '雪白', body: 0xd2cfc4, dark: 0x43454c, accent: 0x9c4060 },
-  orange: { name: '珊瑚橙', body: 0xc4713f, dark: 0x5e2c18, accent: 0x8e3a52 },
+  indigo: { name: '原色（靛紫）', tint: 0xffffff },
+  glacier: { name: '冰川蓝', tint: 0xa9c9ff },
+  black: { name: '午夜黑', tint: 0x77778a },
+  white: { name: '雪白', tint: 0xffe6ee },
+  orange: { name: '珊瑚橙', tint: 0xffb182 },
 };
 
-/**
- * AGB-001 正面轮廓：圆角矩形（r≈17mm）+ 轻微收腰
- *
- * 真机的上/下沿是平的，只有四角是大圆角；中间比两端矮约 3mm。
- * 之前试过"两端上翘的贝塞尔"（像花生）和超椭圆（像药丸），
- * 都不对 —— 圆角矩形 + 收腰才是 AGB-001 的轮廓。
- */
-function outlinePoints(inset = 0) {
-  const a = HW - inset;
-  const b = HE - inset;
-  const r = Math.max(6, 14 - inset);
-  const dip = 3.2;          // 收腰幅度
-  const seg = 12;           // 每个圆角的采样段数
-  const pts = [];
-
-  // 四个圆角，顺时针：右上 → 左上 → 左下 → 右下
-  const corners = [
-    [a - r, b - r, 0],
-    [-a + r, b - r, 90],
-    [-a + r, -b + r, 180],
-    [a - r, -b + r, 270],
-  ];
-  for (const [cx, cy, deg] of corners) {
-    for (let i = 0; i <= seg; i++) {
-      const t = ((deg + (i / seg) * 90) * Math.PI) / 180;
-      let x = cx + Math.cos(t) * r;
-      let y = cy + Math.sin(t) * r;
-      // 收腰：越靠中间收得越多，两端为 0
-      const k = 1 - Math.pow(Math.abs(x) / a, 2);
-      y -= Math.sign(y) * dip * k;
-      pts.push([x, y]);
-    }
-  }
-  return pts;
+function invisibleProxy(geometry) {
+  return new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+  );
 }
 
-function gbaOutline(inset = 0) {
-  const pts = outlinePoints(inset);
-  const shape = new THREE.Shape();
-  shape.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < pts.length; i++) shape.lineTo(pts[i][0], pts[i][1]);
-  shape.closePath();
-  return shape;
-}
-
-export function createGBA({ lcdTexture } = {}) {
+export async function createGBA({ lcdTexture, onProgress } = {}) {
   const group = new THREE.Group();
 
-  const bodyMats = [];
-  const darkMats = [];
-  const accentMats = [];
+  // ---------- 加载模型 ----------
+  const gltf = await loadGLBWithProgress(new GLTFLoader(), 'models/gba.glb', onProgress);
+  const body = gltf.scene;
+  body.updateMatrixWorld(true);
 
-  // ===== 机身 =====
-  const bodyMat = plastic(SHELL_COLORS.indigo.body, { roughness: 0.44 });
-  const darkMat = plastic(SHELL_COLORS.indigo.dark, { roughness: 0.58 });
-  const accentMat = plastic(SHELL_COLORS.indigo.accent, { roughness: 0.42 });
-  bodyMats.push(bodyMat);
-  darkMats.push(darkMat);
-  accentMats.push(accentMat);
-
-  const body = new THREE.Mesh(extrude(gbaOutline(0.8), BODY_D, 1.2, 28), bodyMat);
-  body.castShadow = true;
-  body.receiveShadow = true;
+  // 居中（此时 group 还没缩放，世界坐标 == group 局部坐标）
+  const box = new THREE.Box3().setFromObject(body);
+  const center = box.getCenter(new THREE.Vector3());
+  body.position.sub(center);
+  body.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+      // 体素模型的调色板贴图要用最近邻，否则颜色会互相串
+      const m = o.material;
+      if (m && m.map) {
+        m.map.magFilter = THREE.NearestFilter;
+        m.map.minFilter = THREE.NearestFilter;
+        m.map.generateMipmaps = false;
+        m.map.needsUpdate = true;
+      }
+      if (m) { m.roughness = Math.min(1, (m.roughness ?? 0.7) + 0.1); m.metalness = 0.05; }
+    }
+  });
   group.add(body);
 
-  // 顶部卡带槽（开口，位于上沿中点）
-  const slotHole = new THREE.Mesh(
-    new THREE.BoxGeometry(60, 2.6, 9),
-    new THREE.MeshStandardMaterial({ color: 0x0a0a0e, roughness: 0.95 })
-  );
-  slotHole.position.set(0, TOP_MID - 1.2, -1.5);
-  group.add(slotHole);
+  // 缩放到真机宽度
+  const S = TARGET_W / BODY_W;
+  group.scale.setScalar(S);
 
-  // ===== 屏幕 =====
-  // 黑色屏幕面板（真机是整块深色塑料）
-  const bezel = new THREE.Mesh(slab(72, 52, 2.4, 5, 0.7), darkMat);
-  bezel.position.set(0, SCREEN.cy, FRONT - 0.8);   // 前表面 ≈ FRONT+0.4
-  group.add(bezel);
+  const baseMaterials = [];
+  body.traverse((o) => { if (o.isMesh && o.material) baseMaterials.push(o.material); });
 
-  // 屏幕内框（再深一层，做出凹槽感）
-  const window_ = new THREE.Mesh(
-    new THREE.PlaneGeometry(SCREEN.w + 3.2, SCREEN.h + 3.2),
-    new THREE.MeshStandardMaterial({ color: 0x08080c, roughness: 0.85 })
-  );
-  window_.position.set(0, SCREEN.cy, FRONT + 0.45);
-  group.add(window_);
-
+  // ---------- LCD ----------
   const lcd = new THREE.Mesh(
-    new THREE.PlaneGeometry(SCREEN.w, SCREEN.h),
+    new THREE.PlaneGeometry(LCD.w, LCD.h),
     new THREE.MeshBasicMaterial({ map: lcdTexture, toneMapped: false })
   );
-  lcd.position.set(0, SCREEN.cy, FRONT + 0.52);
+  lcd.position.set(LCD.cx, LCD.cy, FRONT_Z + 0.02);
   lcd.renderOrder = 2;
   group.add(lcd);
 
-  // 屏幕玻璃反光
-  const glass = new THREE.Mesh(
-    new THREE.PlaneGeometry(SCREEN.w, SCREEN.h),
-    new THREE.MeshBasicMaterial({
-      color: 0xbfd8ff, transparent: true, opacity: 0.04,
-      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
-    })
-  );
-  glass.position.set(0, SCREEN.cy, FRONT + 0.58);
-  glass.renderOrder = 3;
-  group.add(glass);
-
-  // ===== 按键 =====
-  const buttons = {};
+  // ---------- 按键射线代理（不可见） ----------
   const hitMeshes = [];
-  function addPressable(name, mesh, depth) {
+  const buttons = {};
+
+  function addProxy(name, mesh) {
     mesh.userData.btn = name;
-    mesh.userData.baseZ = mesh.position.z;
-    mesh.userData.pressDepth = depth;
+    mesh.position.z = FRONT_Z + 0.05;
     group.add(mesh);
-    buttons[name] = mesh;
     hitMeshes.push(mesh);
+    buttons[name] = mesh;
     return mesh;
   }
 
-  // 十字键
-  const dpadMat = plastic(SHELL_COLORS.indigo.dark, { roughness: 0.52 });
-  darkMats.push(dpadMat);
-  const dpadH = new THREE.Mesh(slab(27, 9.5, 4.2, 2.2), dpadMat);
-  dpadH.position.set(DPAD.x, DPAD.y, FRONT + 0.9);
-  const dpadV = new THREE.Mesh(slab(9.5, 27, 4.2, 2.2), dpadMat);
-  dpadV.position.set(DPAD.x, DPAD.y, FRONT + 0.9);
-  addPressable('dpad', dpadH, 1.1);
-  addPressable('dpad', dpadV, 1.1);
-  const dpadDot = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 0.6, 16), darkMat);
-  dpadDot.rotation.x = Math.PI / 2;
-  dpadDot.position.set(DPAD.x, DPAD.y, FRONT + 3.2);
-  group.add(dpadDot);
+  addProxy('dpad', (() => {
+    const m = invisibleProxy(new THREE.PlaneGeometry(DPAD.size, DPAD.size));
+    m.position.set(DPAD.x, DPAD.y, 0);
+    return m;
+  })());
 
-  // A / B（A 右上、B 左下斜排）
-  function roundButton(cx, cy, r, mat, name) {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 4, 28), mat);
-    m.rotation.x = Math.PI / 2;
-    m.position.set(cx, cy, FRONT + 1.6);
-    m.castShadow = true;
-    return addPressable(name, m, 1.2);
+  for (const [name, b] of [['a', BTN_A], ['b', BTN_B]]) {
+    const m = invisibleProxy(new THREE.CircleGeometry(b.r, 20));
+    m.position.set(b.x, b.y, 0);
+    addProxy(name, m);
   }
-  roundButton(51, 7, 5.4, accentMat, 'a');
-  roundButton(43, -5.5, 5.4, accentMat, 'b');
 
-  // START / SELECT（屏幕下方，斜排）
-  const startSelMat = plastic(0x4c4660, { roughness: 0.55 });
-  const sel = new THREE.Mesh(slab(11, 4, 2.6, 2), startSelMat);
-  sel.position.set(-7, -24, FRONT + 0.5);
-  sel.rotation.z = -0.32;
-  addPressable('select', sel, 0.9);
-
-  const sta = new THREE.Mesh(slab(11, 4, 2.6, 2), startSelMat);
-  sta.position.set(7, -26, FRONT + 0.5);
-  sta.rotation.z = -0.32;
-  addPressable('start', sta, 0.9);
-
-  // L / R 肩键：藏在两端肩部的顶面
-  function shoulder(cx, mat, name) {
-    const m = new THREE.Mesh(slab(30, 5.5, 9, 2.6, 1.2), mat);
-    m.position.set(cx, HE - 6.5, -7);
-    m.rotation.x = -0.12;
-    m.castShadow = true;
-    return addPressable(name, m, 2);
+  for (const [name, b] of [['select', BTN_SELECT], ['start', BTN_START]]) {
+    const m = invisibleProxy(new THREE.PlaneGeometry(b.size, b.size));
+    m.position.set(b.x, b.y, 0);
+    addProxy(name, m);
   }
-  const shoulderMat = plastic(SHELL_COLORS.indigo.body, { roughness: 0.5 });
-  bodyMats.push(shoulderMat);
-  shoulder(-53, shoulderMat, 'l');
-  shoulder(53, shoulderMat, 'r');
 
-  // 指示灯
-  const ledMat = new THREE.MeshStandardMaterial({
-    color: 0x3a1020, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.3,
-  });
-  const led = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 0.8, 16), ledMat);
-  led.rotation.x = Math.PI / 2;
-  led.position.set(-31, SCREEN.cy + 8, FRONT + 0.2);
+  for (const [name, b] of [['l', SHOULDER_L], ['r', SHOULDER_R]]) {
+    const m = invisibleProxy(new THREE.PlaneGeometry(b.w, b.h));
+    m.position.set(b.x, b.y, 0);
+    addProxy(name, m);
+  }
+
+  // ---------- 指示灯（盖住模型自带的绿灯，运行时变红） ----------
+  const ledMat = new THREE.MeshBasicMaterial({ color: 0x2a0d14, toneMapped: false });
+  const led = new THREE.Mesh(new THREE.CircleGeometry(LED.r, 16), ledMat);
+  led.position.set(LED.x, LED.y, FRONT_Z + 0.06);
+  led.renderOrder = 3;
   group.add(led);
 
-  // 扬声器孔：右下角 3×2
-  const holeMat = new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.9 });
-  for (let i = 0; i < 3; i++) {
-    for (let j = 0; j < 2; j++) {
-      const h = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.8, 12), holeMat);
-      h.rotation.x = Math.PI / 2;
-      h.position.set(49 + i * 5.4, -22 - j * 5.4, FRONT + 0.2);
-      group.add(h);
-    }
-  }
-
-  // ===== 卡带槽锚点 =====
+  // ---------- 卡带槽锚点 ----------
   const slot = {
-    center: new THREE.Vector3(0, TOP_MID, -2),
-    insertedPos: new THREE.Vector3(0, 18, -2),
-    hoverPos: new THREE.Vector3(0, TOP_MID + 40, -2),
-    spawnPos: new THREE.Vector3(0, TOP_MID + 95, -2),
+    center: new THREE.Vector3(0, SLOT_Y, -0.3),
+    insertedPos: new THREE.Vector3(0, SLOT_Y - 1.6, -0.3),
+    hoverPos: new THREE.Vector3(0, SLOT_Y + 3.2, -0.3),
+    spawnPos: new THREE.Vector3(0, SLOT_Y + 12, -0.3),
   };
 
-  // ===== 换壳 =====
+  // ---------- 换壳：整体染色（模型是单材质调色板贴图） ----------
   function setShellColor(key) {
     const c = SHELL_COLORS[key];
     if (!c) return false;
-    bodyMats.forEach((m) => m.color.setHex(c.body));
-    for (const m of darkMats) m.color.setHex(c.dark);
-    accentMats.forEach((m) => m.color.setHex(c.accent));
+    baseMaterials.forEach((m) => m.color.setHex(c.tint));
     return true;
   }
 
@@ -247,9 +159,45 @@ export function createGBA({ lcdTexture } = {}) {
       buttons,
       hitMeshes,
       ledMat,
-      bodyTop: TOP_MID,
-      dpad: DPAD,
-      screen: { w: SCREEN.w, h: SCREEN.h, cy: SCREEN.cy },
+      bodyTop: SLOT_Y,
+      dpad: { x: DPAD.x, y: DPAD.y },
+      screen: { w: LCD.w, h: LCD.h, cy: LCD.cy },
+      scale: S,
+    },
+  };
+}
+
+/** 体素风格卡带（模型里没有，按真机 57.5×35×5mm 做一个同色系的） */
+export function createVoxelCartridge({ labelTexture = null } = {}) {
+  const group = new THREE.Group();
+  const shellMat = new THREE.MeshStandardMaterial({ color: 0x8b93a8, roughness: 0.65, metalness: 0.05 });
+  const W = 5.85, H = 3.56, D = 0.5;    // 模型单位（≈57.5 × 35 × 5 mm）
+  const shell = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), shellMat);
+  shell.castShadow = true;
+  group.add(shell);
+
+  // 顶部凹口
+  const notchMat = new THREE.MeshStandardMaterial({ color: 0x5a6070, roughness: 0.7 });
+  const notch = new THREE.Mesh(new THREE.BoxGeometry(W * 0.86, 0.16, D * 0.9), notchMat);
+  notch.position.set(0, H / 2 - 0.1, 0);
+  group.add(notch);
+
+  const labelMat = new THREE.MeshBasicMaterial({
+    map: labelTexture || null,
+    color: labelTexture ? 0xffffff : 0x6d6d80,
+  });
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.82, H * 0.62), labelMat);
+  label.position.set(0, 0, D / 2 + 0.01);
+  label.renderOrder = 2;
+  group.add(label);
+
+  group.visible = false;
+  return {
+    group,
+    setLabel(tex) {
+      labelMat.map = tex;
+      labelMat.color.setHex(0xffffff);
+      labelMat.needsUpdate = true;
     },
   };
 }

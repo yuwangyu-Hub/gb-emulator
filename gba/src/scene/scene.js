@@ -3,13 +3,12 @@
 // 与 gb/src/scene/scene.js 保持同一套打光与相机手感，只是机身换成程序化 AGB。
 
 import * as THREE from 'three';
-import { OrbitControls } from '../../vendor/OrbitControls.js?v=1795668937';
-import { RoomEnvironment } from '../../vendor/RoomEnvironment.js?v=1795668937';
-import { createGBA } from './gbaModel.js?v=1795668937';
-import { createCartridge } from './cartridgeModel.js?v=1795668937';
-import { Animator } from './animator.js?v=1795668937';
+import { OrbitControls } from '../../vendor/OrbitControls.js?v=1795680034';
+import { RoomEnvironment } from '../../vendor/RoomEnvironment.js?v=1795680034';
+import { createGBA, createVoxelCartridge } from './gbaModel.js?v=1795680034';
+import { Animator } from './animator.js?v=1795680034';
 
-export function createScene(canvasEl, lcdTexture) {
+export async function createScene(canvasEl, lcdTexture, opts = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -76,10 +75,10 @@ export function createScene(canvasEl, lcdTexture) {
   scene.add(shadowFloor);
 
   // ---------- 模型 ----------
-  const gba = createGBA({ lcdTexture });
+  const gba = await createGBA({ lcdTexture, onProgress: opts.onProgress });
   scene.add(gba.group);
 
-  const cart = createCartridge({ labelTexture: null });
+  const cart = createVoxelCartridge({ labelTexture: null });
   scene.add(cart.group);
 
   const animator = new Animator();

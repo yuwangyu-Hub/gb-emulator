@@ -4,7 +4,7 @@
 // → insertedPos（沉进机身），到位后由 main.js 隐藏。
 
 import * as THREE from 'three';
-import { slab, plastic } from './geom.js?v=1795668937';
+import { slab, plastic } from './geom.js?v=1795680034';
 
 export function createCartridge({ labelTexture = null } = {}) {
   const group = new THREE.Group();

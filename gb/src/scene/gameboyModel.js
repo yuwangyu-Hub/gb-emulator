@@ -7,8 +7,8 @@
 // 中心在原点（y ∈ [-74, 74]），正面朝 +z。
 
 import * as THREE from 'three';
-import { GLTFLoader } from '../../vendor/GLTFLoader.js?v=1795668937';
-import { loadGLBWithProgress } from './modelLoader.js?v=1795668937';
+import { GLTFLoader } from '../../vendor/GLTFLoader.js?v=1795680034';
+import { loadGLBWithProgress } from './modelLoader.js?v=1795680034';
 
 const TARGET_H = 148;   // 真机高度 mm
 const FLOOR_Y = -74;

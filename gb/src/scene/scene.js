@@ -1,13 +1,13 @@
 // 三维场景：渲染器 / 灯光 / 相机 / 交互
 
 import * as THREE from 'three';
-import { OrbitControls } from '../../vendor/OrbitControls.js?v=1795668937';
-import { RoomEnvironment } from '../../vendor/RoomEnvironment.js?v=1795668937';
-import { createGameBoy } from './gameboyModel.js?v=1795668937';
-import { createCartridge } from './cartridgeModel.js?v=1795668937';
-import { createBoxes } from './boxesModel.js?v=1795668937';
-import { createDrawer } from './drawerModel.js?v=1795668937';
-import { Animator } from './animator.js?v=1795668937';
+import { OrbitControls } from '../../vendor/OrbitControls.js?v=1795680034';
+import { RoomEnvironment } from '../../vendor/RoomEnvironment.js?v=1795680034';
+import { createGameBoy } from './gameboyModel.js?v=1795680034';
+import { createCartridge } from './cartridgeModel.js?v=1795680034';
+import { createBoxes } from './boxesModel.js?v=1795680034';
+import { createDrawer } from './drawerModel.js?v=1795680034';
+import { Animator } from './animator.js?v=1795680034';
 
 export async function createScene(canvasEl, lcdTexture, opts = {}) {
   // 模型加载进度：机身占大头（0~85%），包装盒（85~100%）

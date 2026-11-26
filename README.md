@@ -50,7 +50,9 @@
 
 **内测中**：界面、3D 机身、控制、全屏、音频链路都已接好，内核还在打磨。
 
-**3D 展示层**：市面上没有合适的 AGB 授权模型，机身改用 three.js 程序化建模 —— 按真机 144.5 × 82 × 22 mm、屏幕 61.2 × 40.8 mm 的比例挤出圆角机身，配十字键 / A / B / START / SELECT / L / R、指示灯、扬声器孔、顶部卡带槽。
+**3D 展示层**：机身使用 Sketchfab 上的 CC-BY 体素模型 [GameBoy Advance](https://sketchfab.com/3d-models/gameboy-advance-1f0cec299147469f8f856c6fb8867c30) by **N4B1L Nassir**（6,726 面，单网格 + 256×1 调色板贴图），缩放到真机 144.5 mm 宽。
+
+LCD、按键射线代理、指示灯、卡带槽的位置不是硬编码，而是把模型正交正面渲染成图后按像素量出来的（`gba/src/scene/gbaModel.js` 顶部记录了换算关系与全部测量值）。
 
 - 可旋转缩放、5 种外壳配色（存 localStorage）、插卡飞入动画、通电指示灯
 - 3D 机身按键可直接点击（射线拾取），按下有位移反馈并传给内核
@@ -126,6 +128,7 @@ gh repo create gb-emulator --public --source=. --remote=origin --push
 | 试玩卡带 ROM（`kirby.gb`） | `gb/roms/` 目录 | **不入库**（见 `.gitignore`） | "试玩示例"按钮提示未内置 ROM，用"上传 ROM"按钮添加即可 |
 | 卡带封面图库（`index.json` + 1633 张 jpg） | `gb/assets/carts/` 目录 | 入库 | 卡带标签使用内置程序化绘制的默认样式 |
 | 3D 模型（`gb-dmg-v2.glb`，3.6MB） | `gb/models/` 目录 | 入库 | 无备用模型，机身无法显示 |
+| GBA 机身模型（`gba.glb`，0.4MB） | `gba/models/` 目录 | 入库 |
 | 包装盒模型（`gb-dmg-v1-backup.glb`，0.6MB） | `gb/models/` 目录 | 入库 | 右侧包装盒不显示，其余功能正常 |
 | three.js 等依赖 | `gb/vendor/` 目录 | 入库 | 页面完全无法渲染（本地化，不依赖 CDN） |
 
@@ -136,7 +139,8 @@ gh repo create gb-emulator --public --source=. --remote=origin --push
 ## 许可与署名
 
 - 本项目代码：MIT License（见 LICENSE）
-- 3D 模型 [Game Boy High Poly SDS ready](https://sketchfab.com/3d-models/game-boy-high-poly-sds-ready-4e41c3f5079e4104a0a7f497ab05a087)：CC-BY 4.0（页面页脚已署名，请保留）
+- GB 3D 模型 [Game Boy High Poly SDS ready](https://sketchfab.com/3d-models/game-boy-high-poly-sds-ready-4e41c3f5079e4104a0a7f497ab05a087) by danielweinlein：CC-BY 4.0（页面页脚已署名，请保留）
+- GBA 3D 模型 [GameBoy Advance](https://sketchfab.com/3d-models/gameboy-advance-1f0cec299147469f8f856c6fb8867c30) by N4B1L Nassir：CC-BY（页面页脚已署名，请保留）
 - 模拟器内核与 UI 为原创实现；本项目与 Nintendo 无关，Game Boy 为 Nintendo 商标
 
 ## 维护约定

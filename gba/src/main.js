@@ -4,10 +4,10 @@
 // 展示层与内核完全解耦：内核只吐 framebuffer / 收 setKey，场景只负责把它画到 LCD 贴图上。
 
 import * as THREE from 'three';
-import { GBA } from './emulator/gba.js?v=1795668937';
-import { LCDScreen, makeLabelTexture } from './scene/textures.js?v=1795668937';
-import { buildTestROM } from './demoRom.js?v=1795668937';
-import { createScene } from './scene/scene.js?v=1795668937';
+import { GBA } from './emulator/gba.js?v=1795680034';
+import { LCDScreen, makeLabelTexture } from './scene/textures.js?v=1795680034';
+import { buildTestROM } from './demoRom.js?v=1795680034';
+import { createScene } from './scene/scene.js?v=1795680034';
 
 const $ = (id) => document.getElementById(id);
 
@@ -45,7 +45,33 @@ lcdTexture.generateMipmaps = false;
 lcdTexture.colorSpace = THREE.SRGBColorSpace;
 
 // ---------- 场景 ----------
-const { renderer, scene, camera, controls, gba: model, cart, animator } = createScene(canvas, lcdTexture);
+// 模型是外部 GLB，加载是异步的（顶层 await，与 gb/ 的做法一致）
+const bootScreen = $('bootScreen');
+const bootBar = $('bootBar');
+const bootMeta = $('bootMeta');
+function setBootProgress(p) {
+  if (!bootScreen || bootScreen.classList.contains('is-done')) return;
+  const pct = Math.max(0, Math.min(100, Math.round(p * 100)));
+  if (bootBar) bootBar.style.width = pct + '%';
+  if (bootMeta) bootMeta.textContent = pct < 100 ? pct + '%' : '渲染中…';
+}
+function finishBoot() {
+  if (!bootScreen) return;
+  setBootProgress(1);
+  requestAnimationFrame(() => setTimeout(() => {
+    bootScreen.classList.add('is-done');
+    setTimeout(() => { bootScreen.hidden = true; }, 600);
+  }, 120));
+}
+
+let sceneBundle;
+try {
+  sceneBundle = await createScene(canvas, lcdTexture, { onProgress: setBootProgress });
+} catch (e) {
+  if (bootScreen) { bootScreen.classList.add('is-done'); bootScreen.hidden = true; }
+  throw e;
+}
+const { renderer, scene, camera, controls, gba: model, cart, animator } = sceneBundle;
 
 // ---------- 模拟器 ----------
 const gba = new GBA();
@@ -192,9 +218,7 @@ function insertAnimation(fileName) {
       },
       onComplete: () => {
         cart.group.visible = false;
-        model.parts.ledMat.emissive.setHex(0xff2a3c);
-        model.parts.ledMat.emissiveIntensity = 1.4;
-        model.parts.ledMat.color.setHex(0xff5a64);
+        model.parts.ledMat.color.setHex(0xff3b4d);
         bootFlash = 1;
       },
     },
@@ -224,8 +248,7 @@ function ejectROM() {
   paused = false;
   state = 'ejecting';
   setStatus('弹出卡带…', 'warn');
-  model.parts.ledMat.emissive.setHex(0x000000);
-  model.parts.ledMat.emissiveIntensity = 0;
+  model.parts.ledMat.color.setHex(0x2a0d14);
 
   const slot = model.parts.slot;
   cart.group.visible = true;
@@ -569,6 +592,7 @@ function loop(now) {
   }
 }
 
+finishBoot();
 clearInfoCard();
 setStatus('待机中');
 if (window.matchMedia('(max-width: 720px)').matches) {
