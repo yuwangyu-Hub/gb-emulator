@@ -8,7 +8,7 @@
 |------|------|------|
 | 展厅首页（选择机型） | `/` | ✅ |
 | Game Boy（DMG-001，3D 机身） | `/gb/` | ✅ 可玩 |
-| Game Boy Advance（AGB-001，2D 画面） | `/gba/` | ⚠️ 内测，内核未完成 |
+| Game Boy Advance（AGB-001，3D 机身） | `/gba/` | ⚠️ 内测，内核未完成 |
 
 > 仓库不含商业 ROM。GB 页点「上传 ROM」选自己的 `.gb` / `.gbc` 即可开玩；本地调试时把 ROM 放进 `gb/roms/`，"试玩示例"按钮就能用（该目录不入库）。
 >
@@ -24,9 +24,12 @@
 │   ├── index.html
 │   ├── css/ src/ vendor/ models/ assets/ tools/
 │   └── roms/                # 本地 ROM，不入库
-├── gba/                     # Game Boy Advance 模拟器（2D）
+├── gba/                     # Game Boy Advance 模拟器（3D 机身 + 2D 内核渲染）
 │   ├── index.html
-│   ├── css/ src/ tools/
+│   ├── src/scene/           # 程序化 3D 机身（geom / gbaModel / cartridgeModel / scene / textures）
+│   ├── src/demoRom.js       # 自检卡带（浏览器内生成的最小 ARM ROM）
+│   ├── vendor/              # three.js 等（本地化）
+│   └── css/ src/emulator/ src/main.js tools/
 └── tools/                   # 站点级工具
     ├── serve.py             # 本地开发服务器（no-store + ?v=mtime 重写）
     └── bump_version.py      # 部署前刷新全部 ?v= 版本号
@@ -45,12 +48,19 @@
 
 ## Game Boy Advance（`/gba/`）
 
-**内测中**：界面、控制、全屏、音频链路都已接好，内核还在打磨。
+**内测中**：界面、3D 机身、控制、全屏、音频链路都已接好，内核还在打磨。
 
-现状：
+**3D 展示层**：市面上没有合适的 AGB 授权模型，机身改用 three.js 程序化建模 —— 按真机 144.5 × 82 × 22 mm、屏幕 61.2 × 40.8 mm 的比例挤出圆角机身，配十字键 / A / B / START / SELECT / L / R、指示灯、扬声器孔、顶部卡带槽。
+
+- 可旋转缩放、5 种外壳配色（存 localStorage）、插卡飞入动画、通电指示灯
+- 3D 机身按键可直接点击（射线拾取），按下有位移反馈并传给内核
+- LCD 为 240×160 的 CanvasTexture，实时贴模拟器帧缓冲；待机时播 GBA 开机风动画
+- 全屏为像素整数倍缩放；手机竖屏自动调整取景与 fov
+
+内核现状：
 
 - ✅ ARM7TDMI 解释器（ARM + Thumb）、PPU mode0-5（文本 BG / 仿射 BG / 精灵 / 窗口 / 混色）、DMA、定时器、IRQ
-- ✅ 自带合成测试 ROM（`node gba/tools/smoke.js`）可完整跑通：填满帧缓冲、输出 PNG
+- ✅ 自带合成测试 ROM 可完整跑通：点「自检卡带」按钮，3D 屏幕会变成纯红（证明 ROM → CPU → PPU → 贴图 → 3D 屏幕整条链路）
 - ❌ BIOS HLE 未实现（`swi()` 目前是空壳），真机商业 ROM 启动后会停在黑屏
 - ❌ 存档类型（EEPROM / Flash）只做了字符串探测，未做读写
 
@@ -60,7 +70,8 @@
 |------|------|
 | `MSR` 译码只匹配 `0x0129f000` / `0x0121f000` 两个定值，却按立即数取 `op & 0xff` | `msr CPSR_cf, r0` 把 0 写进 CPSR，模式位清零，启动前 52 条指令就跳飞 |
 | `armSWI` / Thumb SWI 在 HLE 分支 `return true` 但没改 PC | 同一条 SWI 原地死循环 |
-| `thumbLongBranch` 把 `h=2`（BL 前半）当成后半、`h=1` 当成立即数 | BL 用上一次残留的 LR 算目标，PC 跳进 ROM 数据区的奇数地址 |
+| `thumbLongBranch` 把 `h=2`（BL 前半）当成后半、`h=1` 当成后半的 BLX | BL 用上一次残留的 LR 算目标，PC 跳进 ROM 数据区的奇数地址 |
+| `detectSave` 里引用了 Node 的 `Buffer` | 浏览器里一上传 ROM 就抛 ReferenceError（Node 冒烟测试发现不了） |
 
 下一步要做的：实现 BIOS HLE 的常用 SWI（`VBlankIntrWait` / `Halt` / `LZ77UnCompVram` / `CpuSet` / `CpuFastSet` / `Div` / `BgAffineSet` 等）。
 

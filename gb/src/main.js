@@ -1,15 +1,15 @@
 // 主程序：场景 + 模拟器 + 交互串联
 
 import * as THREE from 'three';
-import { GameBoy, parseROMHeader } from './emulator/gameboy.js?v=1795665441';
+import { GameBoy, parseROMHeader } from './emulator/gameboy.js?v=1795666799';
 import {
   LCDScreen, makeLabelTexture, makeLabelTextureFromImage,
-} from './scene/textures.js?v=1795665441';
-import { createScene } from './scene/scene.js?v=1795665441';
-import { updateCartridgeLabel } from './scene/cartridgeModel.js?v=1795665441';
-import { AudioDriver } from './audio.js?v=1795665441';
-import { loadCartArtIndex, findCartArt, loadCartArtImage, cartArtCount } from './cartart.js?v=1795665441';
-import { listROMs, addROM, ensureDemoROM } from './collection.js?v=1795665441';
+} from './scene/textures.js?v=1795666799';
+import { createScene } from './scene/scene.js?v=1795666799';
+import { updateCartridgeLabel } from './scene/cartridgeModel.js?v=1795666799';
+import { AudioDriver } from './audio.js?v=1795666799';
+import { loadCartArtIndex, findCartArt, loadCartArtImage, cartArtCount } from './cartart.js?v=1795666799';
+import { listROMs, addROM, ensureDemoROM } from './collection.js?v=1795666799';
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -1110,7 +1110,8 @@ let fpsCount = 0, fpsTime = 0, lastFrameCount = 0;
 
 function loop(now) {
   requestAnimationFrame(loop);
-  const dt = Math.min(0.05, (now - last) / 1000);
+  // 首帧的 rAF 时间戳可能早于模块执行完的时刻（负 dt），必须夹到 [0, 0.05]
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
   last = now;
 
   animator.update(dt);

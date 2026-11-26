@@ -49,14 +49,12 @@ export class GBA {
   }
 
   detectSave(rom) {
-    const text = Buffer ? null : null;
-    let s = '';
-    for (let i = 0; i < rom.length && s.length < 0x400000; i += 0x1000) {
-      // 粗略扫描：把连续可读字符拼起来
-    }
+    // 在 ROM 里扫 SDK 留下的存档类型标记串（EEPROM_V / FLASH_V / SRAM_V …）
+    // 注意不能引用 Node 的 Buffer —— 这个文件同时跑在浏览器里
     const str = (() => {
       let out = '';
-      for (let i = 0; i < Math.min(rom.length, 0x400000); i++) {
+      const n = Math.min(rom.length, 0x400000);
+      for (let i = 0; i < n; i++) {
         const c = rom[i];
         out += (c >= 0x20 && c < 0x7f) ? String.fromCharCode(c) : '.';
       }
