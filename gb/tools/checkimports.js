@@ -2,7 +2,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const root = process.cwd();
+// 以脚本自身位置推导项目根（gb/），这样在仓库根目录执行也能跑
+const root = import.meta.dirname
+  ? path.resolve(import.meta.dirname, '..')
+  : path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const files = [
   'src/main.js',
   'src/audio.js',

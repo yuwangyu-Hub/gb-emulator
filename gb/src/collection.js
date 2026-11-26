@@ -2,7 +2,7 @@
 // 条目结构: { id, name, data(Uint8Array), ts, demo? }
 // id = `${title}::${globalChecksum}::${size}` —— 同一游戏重复上传会被视为同一张卡带。
 
-import { parseROMHeader } from './emulator/gameboy.js?v=1795613875';
+import { parseROMHeader } from './emulator/gameboy.js?v=1795665441';
 
 const KEY = 'roms';
 const DEMO_ID = 'DEMO::KIRBY';

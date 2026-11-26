@@ -1,5 +1,7 @@
 # 本地构建/测试产物
 tools/out/
+gb/tools/out/
+gba/tools/out/
 *.log
 
 # 系统文件
@@ -7,5 +9,6 @@ tools/out/
 ._*
 
 # 版权 ROM 不入库（仓库公开，避免 DMCA 风险）
-# 需要"试玩示例"时，把 kirby.gb 放到 roms/ 下仅本地使用
-roms/
+# 需要"试玩示例"时，把 kirby.gb 放到 gb/roms/ 下仅本地使用
+gb/roms/
+gba/roms/

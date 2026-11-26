@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>GBA 网页模拟器</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='1' y='7' width='30' height='18' rx='6' fill='%235b4d8e'/%3E%3Crect x='9' y='10' width='14' height='12' rx='1.5' fill='%239fc0ea'/%3E%3Ccircle cx='26' cy='19' r='2.2' fill='%23d34b6a'/%3E%3Ccircle cx='22' cy='22' r='2.2' fill='%23d34b6a'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css?v=1795665441">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <a class="back-home" href="../index.html" title="返回展厅" aria-label="返回展厅">←</a>
+      <span class="brand-mark">▣</span>
+      <div>
+        <h1>GBA 网页模拟器</h1>
+        <p>Game Boy Advance · 纯 JS 内核</p>
+      </div>
+    </div>
+    <div class="chips">
+      <span class="chip beta" title="内核仍在打磨：目前仅合成测试 ROM 可完整运行">内测版</span>
+      <span id="statusChip" class="chip">待机中</span>
+      <span id="fpsChip" class="chip dim">-- FPS</span>
+    </div>
+  </header>
+
+  <aside id="infoCard" class="info-card">
+    <div class="info-head">
+      <div class="cart-icon">🎮</div>
+      <div class="info-txt">
+        <div id="cartTitle" class="cart-title">—</div>
+        <div id="cartFile" class="cart-file">未插入卡带</div>
+      </div>
+    </div>
+    <div id="cartRows" class="cart-rows"></div>
+  </aside>
+
+  <main class="stage">
+    <canvas id="screen" width="240" height="160"></canvas>
+  </main>
+
+  <section class="controls">
+    <input type="file" id="fileInput" accept=".gba,.bin,.rom" hidden>
+    <button id="btnUpload" class="btn primary" title="上传 ROM">📤<span class="bt"> 上传 ROM</span></button>
+    <button id="btnEject" class="btn" title="弹出卡带">⏏<span class="bt"> 弹出卡带</span></button>
+    <button id="btnPause" class="btn" title="暂停">⏸<span class="bt"> 暂停</span></button>
+    <button id="btnReset" class="btn" title="重启">↻<span class="bt"> 重启</span></button>
+    <button id="btnFull" class="btn" title="全屏">⛶<span class="bt"> 全屏</span></button>
+    <span class="sep"></span>
+    <label class="field">
+      <span>音量</span>
+      <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="0.8">
+    </label>
+  </section>
+
+  <p class="beta-note">内测阶段：ARM7TDMI + PPU 已就位，BIOS HLE（SWI）尚未实现，真机商业 ROM 目前会停在黑屏；仅自带合成测试 ROM（<code>node tools/smoke.js</code>）可完整运行。</p>
+
+  <p class="hint">键盘：方向键 十字键 · X / Z = B / A · A / S = R / L · 回车 = START · Shift = SELECT · 拖拽 .gba 文件到页面即可插卡</p>
+
+  <div class="touch" aria-hidden="true">
+    <div class="ss">
+      <button id="tSelect" class="tbtn">SELECT</button>
+      <button id="tStart" class="tbtn">START</button>
+    </div>
+    <div class="touch-row">
+      <div class="dpad">
+        <button id="tUp" class="tbtn">▲</button>
+        <button id="tLeft" class="tbtn">◀</button>
+        <button id="tRight" class="tbtn">▶</button>
+        <button id="tDown" class="tbtn">▼</button>
+      </div>
+      <div class="ab">
+        <button id="tL" class="tbtn">L</button>
+        <button id="tB" class="tbtn">B</button>
+        <button id="tA" class="tbtn">A</button>
+        <button id="tR" class="tbtn">R</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="dropOverlay" class="drop-overlay">
+    <div class="drop-box">
+      <div class="cart-big">🎮</div>
+      <p>松开鼠标，插入卡带</p>
+    </div>
+  </div>
+
+  <div id="errBox" class="err-box" hidden></div>
+  <div id="toast" class="toast"></div>
+
+  <p class="credit" style="text-align:center;font-size:11px;color:rgba(255,255,255,.35);margin:6px 0 0">
+    GBA Emulator · 模拟器内核与页面均为原创实现 · 纯 JavaScript
+  </p>
+
+  <script type="module" src="src/main.js?v=1795665441"></script>
+  <script>
+    window.addEventListener('error', (e) => {
+      const box = document.getElementById('errBox');
+      box.hidden = false;
+      box.textContent = '脚本错误：' + (e.message || '未知') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : '');
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      const box = document.getElementById('errBox');
+      box.hidden = false;
+      box.textContent = '未处理的 Promise 异常：' + (e.reason && e.reason.message ? e.reason.message : e.reason);
+    });
+  </script>
+</body>
+</html>

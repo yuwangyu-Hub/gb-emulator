@@ -4,8 +4,8 @@
 // 场景坐标约定与 gameboyModel.js 一致：机身 88.5×148×33，中心在原点，y∈[-74,74]。
 
 import * as THREE from 'three';
-import { GLTFLoader } from '../../vendor/GLTFLoader.js?v=1795613875';
-import { loadGLBWithProgress } from './modelLoader.js?v=1795613875';
+import { GLTFLoader } from '../../vendor/GLTFLoader.js?v=1795665441';
+import { loadGLBWithProgress } from './modelLoader.js?v=1795665441';
 
 export async function createBoxes({ onProgress } = {}) {
   const group = new THREE.Group();
