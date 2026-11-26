@@ -4,10 +4,10 @@
 // 展示层与内核完全解耦：内核只吐 framebuffer / 收 setKey，场景只负责把它画到 LCD 贴图上。
 
 import * as THREE from 'three';
-import { GBA } from './emulator/gba.js?v=1795668139';
-import { LCDScreen, makeLabelTexture } from './scene/textures.js?v=1795668139';
-import { buildTestROM } from './demoRom.js?v=1795668139';
-import { createScene } from './scene/scene.js?v=1795668139';
+import { GBA } from './emulator/gba.js?v=1795668937';
+import { LCDScreen, makeLabelTexture } from './scene/textures.js?v=1795668937';
+import { buildTestROM } from './demoRom.js?v=1795668937';
+import { createScene } from './scene/scene.js?v=1795668937';
 
 const $ = (id) => document.getElementById(id);
 
@@ -288,7 +288,7 @@ canvas.addEventListener('pointerdown', (e) => {
     // 按在十字键的哪一瓣：比较相对中心点的偏移
     const slot = model.parts.slot;
     const local = model.group.worldToLocal(hit.point.clone());
-    const cx = -47, cy = 2;   // 与 gbaModel 里 DPAD 常量保持一致
+    const { x: cx, y: cy } = model.parts.dpad;
     const dx = local.x - cx, dy = local.y - cy;
     dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'up' : 'down');
   }

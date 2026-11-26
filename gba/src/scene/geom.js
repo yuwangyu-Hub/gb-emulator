@@ -47,3 +47,23 @@ export function plastic(color, opts = {}) {
     ...(opts.extra || {}),
   });
 }
+
+/**
+ * 把任意二维轮廓挤出成带倒角的板（正面平整）
+ * 与 slab() 的区别：外形由调用方给的 Shape 决定，不再局限于圆角矩形。
+ */
+export function extrude(shape, thick, bevel = 1.2, curveSegments = 24) {
+  const bt = Math.min(bevel, thick / 2 - 0.05);
+  const depth = Math.max(0.1, thick - bt * 2);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: true,
+    bevelThickness: bt,
+    bevelSize: bt,
+    bevelSegments: 3,
+    curveSegments,
+  });
+  geo.translate(0, 0, -depth / 2);
+  geo.computeVertexNormals();
+  return geo;
+}
