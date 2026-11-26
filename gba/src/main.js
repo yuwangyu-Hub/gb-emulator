@@ -4,10 +4,10 @@
 // 展示层与内核完全解耦：内核只吐 framebuffer / 收 setKey，场景只负责把它画到 LCD 贴图上。
 
 import * as THREE from 'three';
-import { GBA } from './emulator/gba.js?v=1795666799';
-import { LCDScreen, makeLabelTexture } from './scene/textures.js?v=1795666799';
-import { buildTestROM } from './demoRom.js?v=1795666799';
-import { createScene } from './scene/scene.js?v=1795666799';
+import { GBA } from './emulator/gba.js?v=1795668139';
+import { LCDScreen, makeLabelTexture } from './scene/textures.js?v=1795668139';
+import { buildTestROM } from './demoRom.js?v=1795668139';
+import { createScene } from './scene/scene.js?v=1795668139';
 
 const $ = (id) => document.getElementById(id);
 

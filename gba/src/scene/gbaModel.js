@@ -8,7 +8,7 @@
 // START / SELECT / L / R → 指示灯 → 扬声器孔 → 顶部卡带槽。
 
 import * as THREE from 'three';
-import { slab, plastic } from './geom.js?v=1795666799';
+import { slab, plastic } from './geom.js?v=1795668139';
 
 // 真机尺寸
 const BODY = { w: 144.5, h: 82, d: 22, r: 13 };

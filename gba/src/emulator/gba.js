@@ -4,6 +4,7 @@ import { CPU } from './cpu.js';
 import { MMU } from './mmu.js';
 import { PPU } from './ppu.js';
 import { APU } from './apu.js';
+import { createBiosHle, createBiosStub } from './biosHle.js';
 
 export const CYCLES_PER_LINE = 1232;
 export const VISIBLE_CYCLES = 960;
@@ -18,13 +19,18 @@ export class GBA {
     this.cpu = new CPU(this.mmu);
     this.ppu = new PPU(this.mmu);
     this.apu = new APU(this.mmu);
-    this.cpu.swiHook = (c) => this.swi(c);
+    this.mmu.bios = createBiosStub();
+    this.callSwi = createBiosHle(this);
+    this.cpu.swiHook = (c) => this.callSwi(c);
     this.keys = 0x3ff;                 // 1=未按下（KEYINPUT 取反语义）
     this.timers = [0, 1, 2, 3].map(() => ({ counter: 0, reload: 0, prescaler: 0, cascade: false, irq: false, enabled: false, acc: 0 }));
     this.dma = [0, 1, 2, 3].map(() => ({ sad: 0, dad: 0, count: 0, ctrl: 0, active: false }));
     this.ime = 0;
     this.halted = false;
+    this.intrWait = null;              // IntrWait/VBlankIntrWait 的等待状态
+    this.unimplementedSwi = new Set(); // 记录没实现的 SWI，便于排查
     this.frameDone = false;
+    this.dmaBudget = 0;                // 每帧 DMA 传输预算（防止异常轮询把页面拖死）
     this.saveType = 'none';
     this.onFrame = null;
     this.romTitle = '';
@@ -133,15 +139,19 @@ export class GBA {
   }
 
   dmaWrite(addr) {
-    const i = (addr - 0xb0) >> 2;
-    if (i > 3) return;
+    // 每个 DMA 通道占 12 字节（SAD/DAD/CNT_L/CNT_H），
+    // 原来按 >>2 算通道号（等于每个寄存器算一个通道），
+    // 0xDE 会被算成通道 11 直接 return —— DMA 实际从未启动过。
+    const i = Math.floor((addr - 0xb0) / 12);
+    if (i < 0 || i > 3) return;
     const d = this.dma[i];
     const base = 0xb0 + i * 12;
     d.sad = (this.mmu.io[base] | (this.mmu.io[base + 1] << 8) | (this.mmu.io[base + 2] << 16) | (this.mmu.io[base + 3] << 24)) >>> 0;
     d.dad = (this.mmu.io[base + 4] | (this.mmu.io[base + 5] << 8) | (this.mmu.io[base + 6] << 16) | (this.mmu.io[base + 7] << 24)) >>> 0;
     d.count = this.mmu.io[base + 8] | (this.mmu.io[base + 9] << 8);
     d.ctrl = this.mmu.io[base + 10] | (this.mmu.io[base + 11] << 8);
-    if (d.ctrl & 0x8000) {
+    // 只有写控制寄存器（base+10/11）且使能位为 1 才启动即时传输
+    if ((addr === base + 10 || addr === base + 11) && (d.ctrl & 0x8000)) {
       const mode = (d.ctrl >>> 12) & 3;
       if (mode === 0) this.runDMA(i);
     }
@@ -153,6 +163,16 @@ export class GBA {
     const srcCtrl = (d.ctrl >>> 7) & 3;
     const dstCtrl = (d.ctrl >>> 5) & 3;
     let count = d.count || (width ? 0x10000 : 0x4000);
+    // 安全阀：单帧 DMA 传输量超预算就跳过（真机不会这样，但能避免
+    // 内核还没模拟对时游戏陷入轮询、把浏览器主线程占死）
+    const DMA_FRAME_BUDGET = 800000;
+    if (this.dmaBudget + count > DMA_FRAME_BUDGET) {
+      this.dmaBudget = DMA_FRAME_BUDGET;
+      d.ctrl &= ~0x8000;
+      this.mmu.setIo16(0xb0 + i * 12 + 10, d.ctrl);
+      return;
+    }
+    this.dmaBudget += count;
     let src = d.sad & 0xfffffffe;
     let dst = d.dad & 0xfffffffe;
     const step = width ? 4 : 2;
@@ -187,10 +207,15 @@ export class GBA {
     this.mmu.io[0x203] = (if_ >>> 8) & 0xff;
   }
 
-  swi(comment) {
-    // BIOS HLE：只实现最常见的几个，其余忽略
-    if (comment === 0x00 || comment === 0x26) { /* SoftReset：忽略 */ }
-    return;
+  /**
+   * IntrWait / VBlankIntrWait：挂起 CPU 直到 IF 里出现 mask 对应的位。
+   * 真机 BIOS 会临时打开 IME、HALT，醒来后清掉等待的中断位并恢复 IME。
+   */
+  waitForIrq(mask) {
+    this.intrWait = { mask: mask & 0x3fff, oldIme: this.ime };
+    this.ime = 1;
+    this.mmu.io[0x208] = 1;
+    this.halted = true;
   }
 
   // ---------- 定时器 / 时钟推进 ----------
@@ -228,7 +253,24 @@ export class GBA {
       const ie = this.mmu.io[0x200] | (this.mmu.io[0x201] << 8);
       const if_ = this.mmu.io[0x202] | (this.mmu.io[0x203] << 8);
       if (this.halted) {
-        if (this.ime && (ie & if_)) {
+        if (this.intrWait) {
+          // IntrWait：只等 mask 里的位，醒来清标志、恢复 IME，不走中断分发
+          if (if_ & this.intrWait.mask) {
+            this.halted = false;
+            const m = this.intrWait.mask;
+            this.mmu.io[0x202] &= ~(m & 0xff);
+            this.mmu.io[0x203] &= ~((m >>> 8) & 0xff);
+            this.ime = this.intrWait.oldIme;
+            this.mmu.io[0x208] = this.ime;
+            this.intrWait = null;
+          } else {
+            const rest = target - this.cpu.cycles;
+            this.cpu.cycles += rest;
+            this.tickTimers(rest);
+            this.apu.tick(rest);
+            break;
+          }
+        } else if (this.ime && (ie & if_)) {
           this.halted = false;
           this.cpu.tryIRQ(this.ime, ie, if_);
         } else {
@@ -253,6 +295,7 @@ export class GBA {
 
   // ---------- 一帧 ----------
   runFrame() {
+    this.dmaBudget = 0;
     this.ppu.latchRefs();
     for (let line = 0; line < LINES_PER_FRAME; line++) {
       this.mmu.io[0x06] = line & 0xff;

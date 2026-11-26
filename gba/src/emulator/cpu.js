@@ -114,17 +114,18 @@ export class CPU {
   addCycles(n) { this.cycles += n; }
 
   // ---------- 异常 / 中断 ----------
-  raiseException(mode, addr, lrAdjust) {
+  raiseException(mode, addr, lrAdjust, vector = 0x00000008) {
     const oldCpsr = this.cpsr;
     this.setMode(mode);
     this.r[14] = (addr + lrAdjust) >>> 0;   // 返回地址
     this.spsr = oldCpsr;
     this.cpsr = (this.cpsr & ~0x20) | 0x80; // 清 T、置 I(禁 IRQ)
-    this.r[15] = 0x00000008;                // 向量入口（BIOS/高向量）
+    // 向量入口：SWI=0x08，IRQ=0x18（原来 IRQ 也被写死到 0x08，等于跳错向量）
+    this.r[15] = (vector + 8) >>> 0;
   }
   tryIRQ(ime, ie, if_) {
     if (!ime || (ie & if_) === 0 || (this.cpsr & 0x80)) return false;
-    this.raiseException(MODE_IRQ, this.r[15] - 8, 4);
+    this.raiseException(MODE_IRQ, this.r[15] - 8, 4, 0x00000018);
     return true;
   }
 
@@ -173,7 +174,10 @@ export class CPU {
     this.r[15] = (addr + 8) >>> 0;
     this.addCycles(1);
     const cond = op >>> 28;
-    if (!COND_TABLE(this.cpsr, cond)) { return; }
+    // 条件不成立时指令等同 NOP，但 PC 必须继续前进 ——
+    // 原来直接 return，r15 停在 addr+8，下一条又取到同一地址，任何
+    // 「条件不成立」的指令都会变成死循环（真机 ROM 就卡在这上面）。
+    if (!COND_TABLE(this.cpsr, cond)) { this.r[15] = (addr + 12) >>> 0; return; }
 
     const pcModified = this.execARM(op, addr);
     if (!pcModified) this.r[15] = (addr + 12) >>> 0;
@@ -345,7 +349,10 @@ export class CPU {
       this.r[15] = (res + 8) >>> 0;
       return true;
     }
-    if (S && (opcode < 8 || opcode > 11) && opcode !== 8 && opcode !== 9 && opcode !== 10 && opcode !== 11) {
+    // 标志位：TST(8)/TEQ(9) 的 S 位隐含为 1，之前漏了处理，
+    // 导致 `tst r1,#xxx` 之后条件码用的还是上一条指令的旧标志 → 死循环。
+    // CMP(10)/CMN(11) 的 doSub/doAdd 里已经算好，不重复设置。
+    if (S && opcode !== 10 && opcode !== 11) {
       this.setNZ(res);
       if (setC) {
         let f = this.cpsr & ~0x20000000;
@@ -541,12 +548,16 @@ export class CPU {
   }
 
   execThumb(op, addr) {
+    // Thumb 指令分组（按 bits15-12）：
+    //   0x0-0x1  LSL/LSR/ASR、ADD/SUB（寄存器或 3 位立即数）
+    //   0x2-0x3  MOV/CMP/ADD/SUB 8 位立即数
+    //   0x4      ALU 运算 + 高寄存器/BX（0x4000-0x47FF）、LDR Rd,[PC]（0x4800-0x4FFF）
+    // 原来这一组整体错位两档：0x2 被派去 thumbMisc，0x4 被派去 load/store，
+    // 于是 `movs r3,#0x80` 被当成 BX 执行，PC 直接跳到 r0 的值（真机 ROM 就崩在这）。
     switch (op >>> 12) {
-      case 0x0: return this.thumbShiftAddSub(op);
-      case 0x1: return this.thumbImm(op);
-      case 0x2: return this.thumbMisc(op, addr);
-      case 0x3: return this.thumbLdStImm(op);
-      case 0x4: return ((op >>> 11) & 1) ? this.thumbLdPc(op, addr) : this.thumbLdStReg(op);
+      case 0x0: case 0x1: return this.thumbShiftAddSub(op);
+      case 0x2: case 0x3: return this.thumbImm(op);
+      case 0x4: return ((op >>> 11) & 1) ? this.thumbLdPc(op, addr) : this.thumbMisc(op, addr);
       case 0x5: return this.thumbLdStReg(op);
       case 0x6: case 0x7: return this.thumbLdStImm(op);
       case 0x8: return this.thumbLdStHw(op);
@@ -596,10 +607,13 @@ export class CPU {
     const sub = op & 0x0200;
     if (sub) { // 0b010001：高位寄存器 / BX / BLX
       const kind = (op >>> 8) & 3;
-      const msb = (op >>> 7) & 1;   // 1=Rs 高位
-      const msbd = (op >>> 6) & 1;  // 1=Rd 高位
-      const rs = ((op >>> 3) & 7) | (msb ? 8 : 0);
-      const rd = (op & 7) | (msbd ? 8 : 0);
+      // 高位标志的位置：bit7 = Rd 的高位，bit6 = Rm 的高位。
+      // 原来两个标志接反了，`bx lr`(0x4770) 会被解成 `bx r6`，
+      // `mov r7,r10`(0x4657) 会被解成 `mov pc,r2` 直接跳飞。
+      const hd = (op >>> 7) & 1;    // Rd 高位
+      const hs = (op >>> 6) & 1;    // Rm 高位
+      const rs = ((op >>> 3) & 7) | (hs ? 8 : 0);
+      const rd = (op & 7) | (hd ? 8 : 0);
       if (kind === 0) { this.r[rd] = (this.r[rd] + this.r[rs]) >>> 0; if (rd === 15) { this.r[15] = (this.r[15] + 4) >>> 0; return true; } }
       else if (kind === 1) { this.doSub(this.r[rd], this.r[rs], 1); }
       else if (kind === 2) { this.r[rd] = this.r[rs] >>> 0; if (rd === 15) { this.r[15] = (this.r[15] + 4) >>> 0; return true; } }
@@ -640,21 +654,21 @@ export class CPU {
   }
 
   thumbLdStImm(op) {
-    const kind = (op >>> 12) & 0xf;
+    // 0x6000-0x7FFF：bit12 = B（1=字节），bit11 = L（1=读），imm5 按单位缩放。
+    // 原实现拿 bits15-12 当类别，把 0x6800-0x6FFF 的 LDR 当成了 STR ——
+    // 于是 `ldr r0,[r1,#8]` 变成不停往 DMA 控制寄存器写值，
+    // 触发几万次 DMA 传输，游戏永远等不到完成。
+    const b = (op >>> 12) & 1;
+    const l = (op >>> 11) & 1;
     const rd = op & 7, rb = (op >>> 3) & 7;
-    let off;
-    if (kind === 6 || kind === 7) off = ((op >>> 6) & 0x1f) << 0;      // word: imm5*4
-    else if (kind === 8 || kind === 9) off = ((op >>> 6) & 0x1f) << 1; // halfword
-    else off = 0;
-    if (kind === 6 || kind === 7) off = ((op >>> 6) & 0x1f) * 4;
-    const base = this.r[rb];
-    const addr = (base + off) >>> 0;
-    switch (kind) {
-      case 6: this.m.write32(addr, this.r[rd]); break;
-      case 7: this.r[rd] = this.m.read32(addr); break;
-      case 8: this.m.write8(addr, this.r[rd] & 0xff); break;
-      case 9: this.r[rd] = this.m.read8(addr); break;
-      case 3: this.r[rd] = this.m.read32(addr); break;
+    const off = ((op >>> 6) & 0x1f) * (b ? 1 : 4);
+    const addr = (this.r[rb] + off) >>> 0;
+    if (b) {
+      if (l) this.r[rd] = this.m.read8(addr);
+      else this.m.write8(addr, this.r[rd] & 0xff);
+    } else {
+      if (l) this.r[rd] = this.m.read32(addr);
+      else this.m.write32(addr, this.r[rd]);
     }
     this.addCycles(this.m.wait(addr));
     return false;

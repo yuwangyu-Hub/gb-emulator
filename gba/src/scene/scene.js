@@ -3,11 +3,11 @@
 // 与 gb/src/scene/scene.js 保持同一套打光与相机手感，只是机身换成程序化 AGB。
 
 import * as THREE from 'three';
-import { OrbitControls } from '../../vendor/OrbitControls.js?v=1795666799';
-import { RoomEnvironment } from '../../vendor/RoomEnvironment.js?v=1795666799';
-import { createGBA } from './gbaModel.js?v=1795666799';
-import { createCartridge } from './cartridgeModel.js?v=1795666799';
-import { Animator } from './animator.js?v=1795666799';
+import { OrbitControls } from '../../vendor/OrbitControls.js?v=1795668139';
+import { RoomEnvironment } from '../../vendor/RoomEnvironment.js?v=1795668139';
+import { createGBA } from './gbaModel.js?v=1795668139';
+import { createCartridge } from './cartridgeModel.js?v=1795668139';
+import { Animator } from './animator.js?v=1795668139';
 
 export function createScene(canvasEl, lcdTexture) {
   const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, alpha: true });
