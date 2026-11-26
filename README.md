@@ -17,7 +17,7 @@
 ## 目录结构
 
 ```
-gb-emulator/                 # 仓库根 = 站点根
+3DemulatorLibrary/           # 仓库根 = 站点根（目录名随意，Pages 只认仓库内容）
 ├── index.html               # 展厅首页（选机型）
 ├── css/hub.css              # 首页样式（两台掌机的 SVG 机身）
 ├── gb/                      # Game Boy 模拟器（3D）

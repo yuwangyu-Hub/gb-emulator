@@ -12,3 +12,10 @@ gba/tools/out/
 # 需要"试玩示例"时，把 kirby.gb 放到 gb/roms/ 下仅本地使用
 gb/roms/
 gba/roms/
+
+# 本地工具与记忆库（不进仓库）
+.tools/
+.memsearch/
+
+# 根目录的演示截图（只用于文档/汇报）
+/*.png
